@@ -1,0 +1,376 @@
+---
+title: "Smoothing Temperature Data"
+author: "Steve Bischoff"
+date: "2023-11-29"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+```{r include=FALSE, warning=FALSE}
+suppressWarnings(library(ggplot2))
+suppressWarnings(library(reshape2))
+suppressWarnings(library(tseries))
+suppressWarnings(library(tidyverse))
+suppressWarnings(library(ks))
+suppressWarnings(library(ramify))
+suppressWarnings(library(pracma))
+```
+
+```{r include=FALSE}
+data_aus = read.csv('data/daily_summaries_austin.csv', header=TRUE)
+data_aus$DATE = as.Date(data_aus$DATE)
+```
+
+```{r include=FALSE}
+data_sd = read.csv('data/daily_summaries_sandiego.csv', header=TRUE) %>% drop_na(TMAX)
+data_sd$DATE = as.Date(data_sd$DATE)
+```
+
+```{r include=FALSE}
+data_mn = read.csv('data/daily_summaries_minneapolis.csv', header=TRUE)
+data_mn$DATE = as.Date(data_mn$DATE)
+```
+
+```{r include=FALSE}
+data_bt = read.csv('data/daily_summaries_baltimore.csv', header=TRUE)
+data_bt$DATE = as.Date(data_bt$DATE)
+```
+
+```{r include=FALSE}
+data1_aus = data_aus[(data_aus$DATE >= "1993-01-01") & (data_aus$DATE <= "2022-12-31"),]
+high1_aus = data1_aus$TMAX
+n1_aus = length(high1_aus)
+```
+
+```{r include=FALSE}
+data1_sd = data_sd[(data_sd$DATE >= "1993-01-01") & (data_sd$DATE <= "2022-12-31"),]
+high1_sd = data1_sd$TMAX
+n1_sd = length(high1_sd)
+```
+
+```{r include=FALSE}
+data1_mn = data_mn[(data_mn$DATE >= "1993-01-01") & (data_mn$DATE <= "2022-12-31"),]
+high1_mn = data1_mn$TMAX
+n1_mn = length(high1_mn)
+```
+
+```{r include=FALSE}
+data1_bt = data_bt[(data_bt$DATE >= "1993-01-01") & (data_bt$DATE <= "2022-12-31"),]
+high1_bt = data1_bt$TMAX
+n1_bt = length(high1_bt)
+```
+
+```{r include=FALSE}
+time_idx1_aus = 1:n1_aus
+date1_aus = data1_aus$DATE
+```
+
+```{r include=FALSE}
+time_idx1_sd = 1:n1_sd
+date1_sd = data1_sd$DATE
+```
+
+```{r include=FALSE}
+time_idx1_mn = 1:n1_mn
+date1_mn = data1_mn$DATE
+```
+
+```{r include=FALSE}
+time_idx1_bt = 1:n1_bt
+date1_bt = data1_bt$DATE
+```
+
+# 1. Introduction
+
+Smoothing methods are a popular way to identify the trend(s) in noisy data without having to construct a model of the data-generating process. Temperature data are a particularly appealing application of these methods. Consider this graph of daily high temperatures in Austin, Texas in the late 90s: [1]
+
+```{r}
+low=1000
+high=2500
+ylims = c(10,120)
+gg = ggplot(data1_aus[low:high,], aes(x=DATE, y=TMAX)) + geom_line() + labs(title="Austin Daily Highs", x="Date", y="High Temp.") + theme(plot.title = element_text(hjust = 0.5))
+print(gg)
+```
+
+The graph is visually unappealing due to daily temperature fluctuations. This noise also makes it difficult to generalize and identify trends. As just one example: the winter of 96-97 clearly has the lowest lows of these years, but was that cold spell an aberration or did it truly have the coldest winter?
+
+This project investigates the application of automated smoothing methods to temperature data. Temperature data has several features that complicate the task. These features are detailed in Section {X}, and potential solutions are discussed in subsequent sections. I find that *Super-Smoothing with Leave-k-Out Cross-Validation* does a pretty good job of smoothing the data where other methods fail. 
+
+## 1.1 Data
+
+NOAA data request
+
+Austin, San Diego, Minneapolis, Baltimore
+
+Available back into at least the 40s. Truncated to 1993 - 2022 to make computation more manageable.
+
+```{r}
+plot_df = data.frame(Daily_High_Temp=c(data1_aus$TMAX, data1_sd$TMAX,
+                                       data1_mn$TMAX, data1_bt$TMAX),
+                     Date=c(data1_aus$DATE, data1_sd$DATE,
+                                       data1_mn$DATE, data1_bt$DATE),
+                     City=c(rep("Austin", n1_aus),
+                                   rep("S.D.", n1_sd),
+                                   rep("Minn.", n1_mn),
+                                   rep("Balt.", n1_bt)))
+plot_df$Date = as.Date(plot_df$Date)
+```
+
+```{r}
+gg = ggplot(plot_df, aes(x=Date, y=Daily_High_Temp)) + geom_line() + facet_wrap( ~ City) + labs(title="Daily High Temperatures 1993-2022", y="High Temp.") + theme(plot.title = element_text(hjust = 0.5))
+print(gg)
+```
+
+
+```{r}
+par(mar=c(5,5,4,2))
+boxplot(Daily_High_Temp ~ City, plot_df, cex.lab=1, cex.axis=1)
+```
+
+# 2. Kernel Smoothing
+
+**Overview:** Kernel smoothers apply a weighted average to the data. They take a *bandwidth* parameter that controls how smooth the output curve is.
+
+**In-depth:** Smoothing methods try to find a good *smoothing function* that cuts through the noise to give the underlying trend. The value of a smoothing function at a point is generally calculated as some type of weighted average of the values at surrounding points. For instance, the temperature given by the smoothing function on Oct. 1, 1996 is a weighted average of the actual temperatures on and around that date.
+
+Perhaps the simplest smoother is the *constant-span running mean* [2 Givens and Hoeting p. 366]. This smoother is given a parameter $k$ that defines a window size for taking the mean. Suppose we apply the constant-span running mean with $k = 7$ to the temperature data. To calculate the smoothing function on Oct. 1, 1996, we take the mean temperature of the $\frac{k-1}{2} = 3$ days before, the day itself, and the $\frac{k-1}{2} = 3$ days after: in other words, we calculate the mean high temperature from Sep. 28 to Oct. 4. 
+
+While its simplicity is attractive, the constant-span running mean has some problems: the window parameter defines a sharp cutoff for the points it considers, and points at the edge of the window are given as much weight as points in the middle. 
+
+The smoothing method used in this project is known as *kernel smoothing* and tries to fix these problems. A *kernel* is a function that allows kernel smoothers to take truly *weighted* averages. When calculating the smooth function at a given point, the kernel weights observations based on how close they are to that point: the closer the observation, the higher the weight. This project uses a *normal kernel* that assigns weights around a given point in the bell shape of a normal probability distribution.
+
+The effect of distance on weighting in controlled by the all-important *bandwidth* parameter $h$. If $h$ is set to a low value, observations around the given point are weighted very highly, and weights steeply decrease as distance from the point increases. Conversely, if $h$ is set to a high value, close points are given relatively less weight, and weights decrease less steeply with distance.
+
+Suppose again that we're calculating the smoothed temperature on Oct. 1, 1996. The below plot shows how the temperatures on days around this date are weighted given different bandwidth parameters:
+
+```{r}
+get_S = function(X, kernel_func, h) {
+  # Get smoothing matrix with given kernel and bandwidth
+  X_diff = outer(X, X, FUN="-")
+  Z = X_diff/h
+  S_temp = kernel_func(Z)
+  S = S_temp/rowSums(S_temp)
+  return(S)
+}
+
+kernel_smoother = function(X, Y, kernel_func, h) {
+  S = get_S(X, kernel_func, h) # smoothing matrix
+  sk_hat = S %*% Y
+  return(sk_hat)
+}
+```
+
+```{r}
+data1_aus$s_3  = dnorm((1370-time_idx1_aus)/3)/sum(dnorm((1370-time_idx1_aus)/3))
+data1_aus$s_7  = dnorm((1370-time_idx1_aus)/7)/sum(dnorm((1370-time_idx1_aus)/7))
+data1_aus$s_14 = dnorm((1370-time_idx1_aus)/14)/sum(dnorm((1370-time_idx1_aus)/14))
+data1_aus$s_28 = dnorm((1370-time_idx1_aus)/28)/sum(dnorm((1370-time_idx1_aus)/28))
+data1_aus$s_42 = dnorm((1370-time_idx1_aus)/42)/sum(dnorm((1370-time_idx1_aus)/42))
+```
+
+```{r}
+df_temp = melt(data1_aus[1336:1404,c("DATE","s_3","s_7","s_14","s_28","s_42")], id="DATE")
+gg = ggplot(df_temp) + geom_line(aes(x=DATE, y=value, color=variable)) + scale_color_discrete(name="Bandwidth", labels=c(3,7,14,28,42)) + labs(title="Normal Kernel Weights by Bandwidth around 1996/10/01", x="Date", y="Normal Kernel Weight") + theme(plot.title = element_text(hjust = 0.5))
+print(gg)
+```
+
+Given a bandwidth of 3, the smoothed temperature on Oct. 1 mostly depends on the temperatures in a small window around that date. Given a bandwidth of 28 or 42, the smoothed temperature on Oct. 1 is giving non-negligible weight to temperatures in August and November.
+
+As seen below, the bandwidth has a significant impact on the smooth:
+
+```{r}
+Y_hat1_aus = kernel_smoother(time_idx1_aus, high1_aus, dnorm, 3)
+data1_aus$Y_hat_3 = Y_hat1_aus
+```
+
+```{r}
+Y_hat1_aus = kernel_smoother(time_idx1_aus, high1_aus, dnorm, 42)
+data1_aus$Y_hat_42 = Y_hat1_aus
+```
+
+```{r}
+df_temp = suppressWarnings(melt(data1_aus[(data1_aus$DATE >= "1995-10-01") & (data1_aus$DATE <= "1999-09-30"),c("DATE","TMAX","Y_hat_3","Y_hat_42")], id="DATE"))
+gg = suppressWarnings(ggplot(df_temp) + geom_line(aes(x=DATE, y=value, color=variable)) + labs(title="Austin Daily Highs with two smooths",x="Date", y="High Temp.") + scale_color_manual("Bandwidth", values=c("gray","red","blue"), labels=c("N/A", "3", "42")) + theme(plot.title = element_text(hjust = 0.5)))
+print(gg)
+```
+
+The kernel smoother with $h=3$ overfits the data, following its fluctuations too closely and failing to provide much of a smooth at all. The kernel smoother with $h=42$ underfits the data, failing to fully capture the seasonal extremes in summer and winter.
+
+# 3. Bandwidth Selection
+
+**Overview:** Automated bandwidth selection methods scale better, so they're preferred to manual selection when we need to smooth many data sets and / or large data sets.
+
+**In-depth:** Selecting an appropriate bandwidth is crucially important for getting a good smooth of the data (it's generally viewed as much more important than the choice of kernel function). We can divide methods of bandwidth selection into two broad categories, manual and automated.
+
+## 3.1 Manual Bandwidth Selection
+
+A common way to manually select a bandwidth is by trial and error with visual inspection of the smooths given by different bandwidths. We plot various smooths over the data and see how well they capture the overall trend(s). 
+
+Here are plots of a normal kernel smooth with $h = 14$ for all 4 cities:
+
+```{r}
+Y_hat1_aus = kernel_smoother(time_idx1_aus, high1_aus, dnorm, 14)
+data1_aus$Y_hat = Y_hat1_aus
+```
+
+```{r}
+Y_hat1_sd = kernel_smoother(time_idx1_sd, high1_sd, dnorm, 14)
+data1_sd$Y_hat = Y_hat1_sd
+```
+
+```{r}
+Y_hat1_mn = kernel_smoother(time_idx1_mn, high1_mn, dnorm, 14)
+data1_mn$Y_hat = Y_hat1_mn
+```
+
+```{r}
+Y_hat1_bt = kernel_smoother(time_idx1_bt, high1_bt, dnorm, 14)
+data1_bt$Y_hat = Y_hat1_bt
+```
+
+```{r}
+plot_df$Y_hat = c(Y_hat1_aus, Y_hat1_sd, Y_hat1_mn, Y_hat1_bt)
+plot_df_trunc = plot_df[(plot_df$Date >= "1995-10-01") & (plot_df$Date <= "1999-09-30"),]
+```
+
+```{r}
+gg = ggplot(plot_df_trunc) + geom_line(aes(x=Date, y=Daily_High_Temp), color="gray") + geom_line(aes(x=Date, y=Y_hat), color="red") + facet_wrap( ~ City, scales="free") + labs(title="Daily High Temperatures with Normal Kernel Smooth (h=14)", x="Date", y="High Temp.") + theme(plot.title = element_text(hjust = 0.5))
+print(gg)
+```
+
+By visual inspection, a bandwidth of 14 seems to do a pretty good job of smoothing the data, especially for Baltimore and Minnesota.
+
+## 3.2 Automated Bandwidth Selection
+
+A main problem with manual bandwidth selection is that it doesn't scale well in situations with many data sets and / or large data sets. There are reasons for this beyond the obvious time-intensiveness:
+
+ * Many data sets: Even if they're all about the same type of phenomenon, different data sets can have different properties that make different bandwidths more appropriate. We shouldn't assume that a bandwidth that works well on some of the data sets will work well on all of them.  Notice above how the smooth with $h=14$ is noticeably worse for San Diego, containing many small wiggles due to short-term temperature fluctuations. A higher bandwidth could help remove those wiggles and provide a better smooth.
+ * Large data sets: It's difficult to visually inspect the smooth over data sets that cover a wide "x-value" range. The above graphs only show 4 years out of 30, so we don't know how well the smooth does in other years.
+
+Methods for automated bandwidth selection are explored in the rest of this project.
+
+# 4. Leave-One-Out Cross-Validation (LOOCV)
+
+```{r}
+squared_error = function(u) {
+  return(u^2)
+}
+
+cross_validate = function(X, Y, kernel_func, error_func, h) {
+  # constant-span running mean smoother
+  n = length(X)
+  S = get_S(X, kernel_func, h) # smoothing matrix
+  
+  sk_hat = S %*% Y # Y_hat
+  
+  rss = 0
+  for (i in 1:n) {
+    # components of Givens equation 11.18
+    num = Y[i] - sk_hat[i]
+    den = 1 - S[i, i]
+    # update rss
+    rss = rss + error_func(num/den)
+  }
+  return(rss/n)
+}
+```
+
+```{r}
+# Austin
+CVMSE1_aus = c()
+
+for (i in 1:20) {
+  bdw = i/1 # i/10
+  CVMSE1_aus = c(CVMSE1_aus, cross_validate(
+    time_idx1_aus, high1_aus, dnorm, squared_error, bdw))
+}
+```
+
+```{r}
+CVMSE1_sd = c()
+
+for (bdw in 1:20) {
+  CVMSE1_sd = c(CVMSE1_sd, cross_validate(
+    time_idx1_sd, high1_sd, dnorm, squared_error, bdw))
+}
+```
+
+```{r}
+CVMSE1_mn = c()
+
+for (bdw in 1:20) {
+  CVMSE1_mn = c(CVMSE1_mn, cross_validate(
+    time_idx1_mn, high1_mn, dnorm, squared_error, bdw))
+}
+```
+
+```{r}
+CVMSE1_bt = c()
+
+for (bdw in 1:20) {
+  CVMSE1_bt = c(CVMSE1_bt, cross_validate(
+    time_idx1_bt, high1_bt, dnorm, squared_error, bdw))
+}
+```
+
+```{r}
+plot_df_loocv = data.frame(h=seq(1,20, by=1),
+                           MSE=c(CVMSE1_aus, CVMSE1_sd, 
+                                 CVMSE1_mn, CVMSE1_bt),
+                           City=c(rep("Austin", 20),
+                                   rep("S.D.", 20),
+                                   rep("Minn.", 20),
+                                   rep("Balt.", 20)))
+```
+
+```{r}
+gg = ggplot(plot_df_loocv, aes(x=h, y=MSE)) + geom_line() + facet_wrap( ~ City, scales="free") + labs(title="LOOCV MSE by bandwidth", y="Mean Squared Error (MSE)", x="Bandwidth") + theme(plot.title = element_text(hjust = 0.5))
+print(gg)
+```
+
+# 5. Difficulties Posed By Temperature Data
+
+## 5.1. Non-constant Variance
+
+## 5.2. Dependent Data
+
+### Plot ACF
+
+```{r}
+error1_aus = Y_hat1_aus - high1_aus
+```
+
+```{r}
+error1_sd = Y_hat1_sd - high1_sd
+```
+
+```{r}
+error1_mn = Y_hat1_mn - high1_mn
+```
+
+```{r}
+error1_bt = Y_hat1_bt - high1_bt
+```
+
+```{r}
+par(mar=c(4,4,4,2), mfrow=c(2,2))
+
+acf(error1_aus, lag=20, main="Austin", cex.main=1.5, cex.lab=1)
+acf(error1_sd, lag=20, main="San Diego", cex.main=1.5, cex.lab=1)
+acf(error1_mn, lag=20, main="Minneapolis", cex.main=1.5, cex.lab=1)
+acf(error1_bt, lag=20, main="Baltimore", cex.main=1.5, cex.lab=1)
+```
+
+## 5.3. Outliers
+
+# 6. Super-Smoother
+
+# 7. Leave-K-Out Cross-Validation
+
+
+
