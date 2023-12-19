@@ -1,7 +1,7 @@
 ---
 title: "Smoothing Temperature Data"
 author: "Steve Bischoff"
-date: "2023-11-29"
+date: "2023-12-19"
 output:
   pdf_document: default
   html_document: default
@@ -134,9 +134,13 @@ boxplot(Daily_High_Temp ~ City, plot_df, cex.lab=1, cex.axis=1)
 
 # 2. Kernel Smoothing
 
+---
+
 **Overview:** Kernel smoothers apply a weighted average to the data. They take a *bandwidth* parameter that controls how smooth the output curve is.
 
-**In-depth:** Smoothing methods try to find a good *smoothing function* that cuts through the noise to give the underlying trend. The value of a smoothing function at a point is generally calculated as some type of weighted average of the values at surrounding points. For instance, the temperature given by the smoothing function on Oct. 1, 1996 is a weighted average of the actual temperatures on and around that date.
+---
+
+Smoothing methods try to find a good *smoothing function* that cuts through the noise to give the underlying trend. The value of a smoothing function at a point is generally calculated as some type of weighted average of the values at surrounding points. For instance, the temperature given by the smoothing function on Oct. 1, 1996 is a weighted average of the actual temperatures on and around that date.
 
 Perhaps the simplest smoother is the *constant-span running mean* [2 Givens and Hoeting p. 366]. This smoother is given a parameter $k$ that defines a window size for taking the mean. Suppose we apply the constant-span running mean with $k = 7$ to the temperature data. To calculate the smoothing function on Oct. 1, 1996, we take the mean temperature of the $\frac{k-1}{2} = 3$ days before, the day itself, and the $\frac{k-1}{2} = 3$ days after: in other words, we calculate the mean high temperature from Sep. 28 to Oct. 4. 
 
@@ -179,7 +183,7 @@ gg = ggplot(df_temp) + geom_line(aes(x=DATE, y=value, color=variable)) + scale_c
 print(gg)
 ```
 
-Given a bandwidth of 3, the smoothed temperature on Oct. 1 mostly depends on the temperatures in a small window around that date. Given a bandwidth of 28 or 42, the smoothed temperature on Oct. 1 is giving non-negligible weight to temperatures in August and November.
+Given a bandwidth $h=3$, the smoothed temperature on Oct. 1 mostly depends on the temperatures in a small window around that date. Given a bandwidth $h=28$ or $h=42$, the smoothed temperature on Oct. 1 is giving non-negligible weight to temperatures in August and November.
 
 As seen below, the bandwidth has a significant impact on the smooth:
 
@@ -203,9 +207,13 @@ The kernel smoother with $h=3$ overfits the data, following its fluctuations too
 
 # 3. Bandwidth Selection
 
+---
+
 **Overview:** Automated bandwidth selection methods scale better, so they're preferred to manual selection when we need to smooth many data sets and / or large data sets.
 
-**In-depth:** Selecting an appropriate bandwidth is crucially important for getting a good smooth of the data (it's generally viewed as much more important than the choice of kernel function). We can divide methods of bandwidth selection into two broad categories, manual and automated.
+---
+
+Selecting an appropriate bandwidth is crucially important for getting a good smooth of the data (it's generally viewed as much more important than the choice of kernel function). We can divide methods of bandwidth selection into two broad categories, manual and automated.
 
 ## 3.1 Manual Bandwidth Selection
 
@@ -243,7 +251,7 @@ gg = ggplot(plot_df_trunc) + geom_line(aes(x=Date, y=Daily_High_Temp), color="gr
 print(gg)
 ```
 
-By visual inspection, a bandwidth of 14 seems to do a pretty good job of smoothing the data, especially for Baltimore and Minnesota.
+By visual inspection, a bandwidth $h=14$ seems to do a pretty good job of smoothing the data, especially for Baltimore and Minnesota.
 
 ## 3.2 Automated Bandwidth Selection
 
@@ -256,13 +264,27 @@ Methods for automated bandwidth selection are explored in the rest of this proje
 
 # 4. Leave-One-Out Cross-Validation (LOOCV)
 
+--- 
+
+**Overview:** Leave-one-out cross-validation (LOOCV) chooses a bandwidth by simulating how well different bandwidths extend to new data. It falls under the training set / testing set paradigm, with each test set having size 1. LOOCV fails to select good bandwidths for temperature data: given a set of candidate bandwidths, it selects the smallest candidate for each data set.
+
+---
+
+Given a data set of size *n*, leave-one-out cross-validation performs *n* training set / testing set splits. As indicated by the name, each LOOCV testing set contains only one data point that has been left out of the corresponding training set. 
+
+LOOCV chooses among a set of candidate bandwidths by measuring how well smoothers with those bandwidths generalize from the training sets to the test sets. Generalization ability is typically measured using some error function such as the mean-squared error (MSE) used in this project. For a given candidate bandwidth, the LOOCV algorithm iterates through the train / test splits. For a given split, it "trains" a smoother with that bandwidth on the training set and calculates the squared error when applied to the (singleton) test set.^fn.^ The MSE across all splits is returned as the performance measure for that bandwidth. The candidate bandwidth with the smallest MSE is returned as the "optimal" choice.
+
+^fn.^ Fortunately, a mathematical shortcut can be applied so that each smoother doesn't actually have to be trained *n* times. See [X] p. XXX.
+
+I applied LOOCV to each temperature data set, testing candidate bandwidths ranging from $h=1$ to $h=20$ in the integers (as we'll see, testing larger bandwidths is unnecessary). 
+
 ```{r}
 squared_error = function(u) {
   return(u^2)
 }
 
 cross_validate = function(X, Y, kernel_func, error_func, h) {
-  # constant-span running mean smoother
+  # kernel smoother
   n = length(X)
   S = get_S(X, kernel_func, h) # smoothing matrix
   
@@ -279,6 +301,8 @@ cross_validate = function(X, Y, kernel_func, error_func, h) {
   return(rss/n)
 }
 ```
+
+## 4.1. Results
 
 ```{r}
 # Austin
@@ -318,8 +342,12 @@ for (bdw in 1:20) {
 }
 ```
 
+The plot below shows the test-set MSE at each candidate bandwidth for each data set. The test-set MSE monotonically increases with bandwidth size, so the LOOCV algorithm selects the smallest candidate ($h=1$) for each city.
+
+In other words, LOOCV fails to select good bandwidths for smoothing these data sets. As seen in Section 2, very small bandwidths barely smooth the data. By selecting the smallest candidate, LOOCV is simply trying to follow the data as closely as possible instead of smoothing it. 
+
 ```{r}
-plot_df_loocv = data.frame(h=seq(1,20, by=1),
+plot_df_loocv = data.frame(h=seq(1, 20, by=1),
                            MSE=c(CVMSE1_aus, CVMSE1_sd, 
                                  CVMSE1_mn, CVMSE1_bt),
                            City=c(rep("Austin", 20),
@@ -335,7 +363,19 @@ print(gg)
 
 # 5. Difficulties Posed By Temperature Data
 
-## 5.1. Non-constant Variance
+---
+
+**Overview:** Temperature data has at least 3 properties that pose difficulties for kernel smoothing and bandwidth selection:
+
+ * Non-Constant Variance
+ * Dependent Data
+ * Outliers
+
+---
+
+Understanding why LOOCV fails to smooth temperature data can help us pick better methods for automated bandwidth selection. 
+
+## 5.1. Non-Constant Variance
 
 ## 5.2. Dependent Data
 
@@ -372,5 +412,5 @@ acf(error1_bt, lag=20, main="Baltimore", cex.main=1.5, cex.lab=1)
 
 # 7. Leave-K-Out Cross-Validation
 
-
+# 8. References
 
