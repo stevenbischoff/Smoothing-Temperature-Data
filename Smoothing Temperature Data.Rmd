@@ -93,7 +93,7 @@ Smoothing methods are a popular way to identify the trend(s) in noisy data witho
 low=1000
 high=2500
 ylims = c(10,120)
-gg = ggplot(data1_aus[low:high,], aes(x=DATE, y=TMAX)) + geom_line() + labs(title="Austin Daily Highs", x="Date", y="High Temp.") + theme(plot.title = element_text(hjust = 0.5))
+gg = ggplot(data1_aus[low:high,], aes(x=DATE, y=TMAX)) + geom_line() + labs(title="Austin Daily Highs", x="Date", y="High Temp. (F)") + theme(plot.title = element_text(hjust = 0.5))
 print(gg)
 ```
 
@@ -122,7 +122,7 @@ plot_df$Date = as.Date(plot_df$Date)
 ```
 
 ```{r}
-gg = ggplot(plot_df, aes(x=Date, y=Daily_High_Temp)) + geom_line() + facet_wrap( ~ City) + labs(title="Daily High Temperatures 1993-2022", y="High Temp.") + theme(plot.title = element_text(hjust = 0.5))
+gg = ggplot(plot_df, aes(x=Date, y=Daily_High_Temp)) + geom_line() + facet_wrap( ~ City) + labs(title="Daily High Temperatures 1993-2022", y="High Temp. (F)") + theme(plot.title = element_text(hjust = 0.5))
 print(gg)
 ```
 
@@ -142,7 +142,7 @@ boxplot(Daily_High_Temp ~ City, plot_df, cex.lab=1, cex.axis=1)
 
 Smoothing methods try to find a good *smoothing function* that cuts through the noise to give the underlying trend. The value of a smoothing function at a point is generally calculated as some type of weighted average of the values at surrounding points. For instance, the temperature given by the smoothing function on Oct. 1, 1996 is a weighted average of the actual temperatures on and around that date.
 
-Perhaps the simplest smoother is the *constant-span running mean* [2 Givens and Hoeting p. 366]. This smoother is given a parameter $k$ that defines a window size for taking the mean. Suppose we apply the constant-span running mean with $k = 7$ to the temperature data. To calculate the smoothing function on Oct. 1, 1996, we take the mean temperature of the $\frac{k-1}{2} = 3$ days before, the day itself, and the $\frac{k-1}{2} = 3$ days after: in other words, we calculate the mean high temperature from Sep. 28 to Oct. 4. 
+Perhaps the simplest smoother is the *constant-span running mean* ([2] p. 366). This smoother is given a parameter $k$ that defines a window size for taking the mean. Suppose we apply the constant-span running mean with $k = 7$ to the temperature data. To calculate the smoothing function on Oct. 1, 1996, we take the mean temperature of the $\frac{k-1}{2} = 3$ days before, the day itself, and the $\frac{k-1}{2} = 3$ days after: in other words, we calculate the mean high temperature from Sep. 28 to Oct. 4. 
 
 While its simplicity is attractive, the constant-span running mean has some problems: the window parameter defines a sharp cutoff for the points it considers, and points at the edge of the window are given as much weight as points in the middle. 
 
@@ -199,7 +199,7 @@ data1_aus$Y_hat_42 = Y_hat1_aus
 
 ```{r}
 df_temp = suppressWarnings(melt(data1_aus[(data1_aus$DATE >= "1995-10-01") & (data1_aus$DATE <= "1999-09-30"),c("DATE","TMAX","Y_hat_3","Y_hat_42")], id="DATE"))
-gg = suppressWarnings(ggplot(df_temp) + geom_line(aes(x=DATE, y=value, color=variable)) + labs(title="Austin Daily Highs with two smooths",x="Date", y="High Temp.") + scale_color_manual("Bandwidth", values=c("gray","red","blue"), labels=c("N/A", "3", "42")) + theme(plot.title = element_text(hjust = 0.5)))
+gg = suppressWarnings(ggplot(df_temp) + geom_line(aes(x=DATE, y=value, color=variable)) + labs(title="Austin Daily Highs with two smooths",x="Date", y="High Temp. (F)") + scale_color_manual("Bandwidth", values=c("gray","red","blue"), labels=c("N/A", "3", "42")) + theme(plot.title = element_text(hjust = 0.5)))
 print(gg)
 ```
 
@@ -247,7 +247,7 @@ plot_df_trunc = plot_df[(plot_df$Date >= "1995-10-01") & (plot_df$Date <= "1999-
 ```
 
 ```{r}
-gg = ggplot(plot_df_trunc) + geom_line(aes(x=Date, y=Daily_High_Temp), color="gray") + geom_line(aes(x=Date, y=Y_hat), color="red") + facet_wrap( ~ City, scales="free") + labs(title="Daily High Temperatures with Normal Kernel Smooth (h=14)", x="Date", y="High Temp.") + theme(plot.title = element_text(hjust = 0.5))
+gg = ggplot(plot_df_trunc) + geom_line(aes(x=Date, y=Daily_High_Temp), color="gray") + geom_line(aes(x=Date, y=Y_hat), color="red") + facet_wrap( ~ City, scales="free") + labs(title="Daily High Temperatures with Normal Kernel Smooth (h=14)", x="Date", y="High Temp. (F)") + theme(plot.title = element_text(hjust = 0.5))
 print(gg)
 ```
 
@@ -274,7 +274,7 @@ Given a data set of size *n*, leave-one-out cross-validation performs *n* traini
 
 LOOCV chooses among a set of candidate bandwidths by measuring how well smoothers with those bandwidths generalize from the training sets to the test sets. Generalization ability is typically measured using some error function such as the mean-squared error (MSE) used in this project. For a given candidate bandwidth, the LOOCV algorithm iterates through the train / test splits. For a given split, it "trains" a smoother with that bandwidth on the training set and calculates the squared error when applied to the (singleton) test set.^fn.^ The MSE across all splits is returned as the performance measure for that bandwidth. The candidate bandwidth with the smallest MSE is returned as the "optimal" choice.
 
-^fn.^ Fortunately, a mathematical shortcut can be applied so that each smoother doesn't actually have to be trained *n* times. See [X] p. XXX.
+^fn.^ Fortunately, a mathematical shortcut can be applied so that each smoother doesn't actually have to be trained *n* times. See ([2] p. 371).
 
 I applied LOOCV to each temperature data set, testing candidate bandwidths ranging from $h=1$ to $h=20$ in the integers (as we'll see, testing larger bandwidths is unnecessary). 
 
@@ -377,6 +377,22 @@ Understanding why LOOCV fails to smooth temperature data can help us pick better
 
 ## 5.1. Non-Constant Variance
 
+The smoothing methods examined up to now assume that the variance of the data is constant across its range. However, temperature data doesn't meet this assumption due to both long and short-term factors. Climate change is an example of a long-term factor affecting temperature variance: as the climate gets further disrupted, we see more temperature extremes and fluctuations. 
+
+The seasons are the primary short-term factor affecting temperature variance. Take another look at some of the Austin data:
+
+```{r}
+low=1000
+high=2500
+ylims = c(10,120)
+gg = ggplot(data1_aus[low:high,], aes(x=DATE, y=TMAX)) + geom_line() + labs(title="Austin Daily Highs", x="Date", y="High Temp. (F)") + theme(plot.title = element_text(hjust = 0.5))
+print(gg)
+```
+
+We can see from this graph (and I know from personal experience) that temperature variance is much higher in the winter than the summer. Austin winters generally fluctuate between 40F and 80F, often within the span of a couple days, while Austin summers generally stay in the upper 90s to low 100s. 
+
+As a result, different bandwidths are appropriate in different seasons. Higher bandwidths seem better in winter since they'll give smooths that are less affected by the short-term fluctuations. Relatively lower bandwidths seem better in summer since they can better capture the peak heat (usually in August).
+
 ## 5.2. Dependent Data
 
 ### Plot ACF
@@ -414,3 +430,6 @@ acf(error1_bt, lag=20, main="Baltimore", cex.main=1.5, cex.lab=1)
 
 # 8. References
 
+[1] https://www.ncei.noaa.gov/cdo-web/
+
+[2] Givens and Hoeting (2012), Computational Statistics.
