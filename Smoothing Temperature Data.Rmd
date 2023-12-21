@@ -99,7 +99,7 @@ print(gg)
 
 The graph is visually unappealing due to daily temperature fluctuations. This noise also makes it difficult to generalize and identify trends. As just one example: the winter of 96-97 clearly has the lowest lows of these years, but was that cold spell an aberration or did it truly have the coldest winter?
 
-This project investigates the application of automated smoothing methods to temperature data. Temperature data has several features that complicate the task. These features are detailed in Section {X}, and potential solutions are discussed in subsequent sections. I find that *Super-Smoothing with Leave-k-Out Cross-Validation* does a pretty good job of smoothing the data where other methods fail. 
+This project investigates the application of automated smoothing methods to temperature data. Temperature data has several features that complicate the task. These features are detailed in Section {X}, and potential solutions are discussed in subsequent sections. I find that *Super-Smoothing with K-Block Cross-Validation* does a pretty good job of smoothing the data where other methods fail. 
 
 ## 1.1 Data
 
@@ -365,11 +365,10 @@ print(gg)
 
 ---
 
-**Overview:** Temperature data has at least 3 properties that pose difficulties for kernel smoothing and bandwidth selection:
+**Overview:** Temperature data has at least two properties that pose difficulties for kernel smoothing and bandwidth selection:
 
  * Non-Constant Variance
  * Dependent Data
- * Outliers
 
 ---
 
@@ -384,7 +383,6 @@ The seasons are the primary short-term factor affecting temperature variance. Ta
 ```{r}
 low=1000
 high=2500
-ylims = c(10,120)
 gg = ggplot(data1_aus[low:high,], aes(x=DATE, y=TMAX)) + geom_line() + labs(title="Austin Daily Highs", x="Date", y="High Temp. (F)") + theme(plot.title = element_text(hjust = 0.5))
 print(gg)
 ```
@@ -395,7 +393,25 @@ As a result, different bandwidths are appropriate in different seasons. Higher b
 
 ## 5.2. Dependent Data
 
-### Plot ACF
+Most smoothing methods work better when deviations from the broader trend in the data are uncorrelated with each other. In the case of temperature data, this would occur if fluctuations around the broader trend were independent from one day to the next. The fluctuations would tend to balance each other out, allowing a smoother to easily cut through the middle of them.
+
+Unfortunately, temperature data isn't like this. When temperatures deviate from the broader trend, they generally do so over the course of several days in a heat wave or cold spell. Abnormally hot days are likely to be followed by abnormally hot days; likewise for abnormally cold days. Consider the highlighted heat wave in Austin during February 1996: 
+
+```{r}
+low=1000
+high=1450
+rect = data.frame(xmin=as.Date("1996-02-18"), xmax=as.Date("1996-02-27"), ymin=-Inf, ymax=Inf)
+gg =  ggplot(data1_aus[low:high,], aes(x=DATE, y=TMAX)) + 
+  geom_line() + 
+  geom_rect(data=rect, aes(xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax), fill="yellow", alpha=0.4, inherit.aes=FALSE) + 
+  labs(title="Austin Daily Highs", x="Date", y="High Temp. (F)") + 
+  theme(plot.title = element_text(hjust = 0.5))
+print(gg)
+```
+
+Here, the positive deviations from the overall trend lasted about a week. Unless they have a very high bandwidth, smoothers won't be able to "cut through" this heat wave and stick to the broader trend. The prolonged spell of abnormally high temperatures will inevitably pull the smooth upwards, perhaps in dramatic fashion. Looking back at the smoother with $h=14$ in Section 3, this is exactly what happens.
+
+We get more evidence of the dependent nature of temperature data from the autocorrelation (ACF) plots of the residuals from the $h=14$ smooths on each city. The ACF plots display the correlations between different lags of the residuals:  
 
 ```{r}
 error1_aus = Y_hat1_aus - high1_aus
@@ -422,11 +438,112 @@ acf(error1_mn, lag=20, main="Minneapolis", cex.main=1.5, cex.lab=1)
 acf(error1_bt, lag=20, main="Baltimore", cex.main=1.5, cex.lab=1)
 ```
 
-## 5.3. Outliers
+For each city, the residuals are positively correlated with the lag-1 and lag-2 residuals. For Minneapolis, the residuals are even positively correlated with the lag-3 residuals. 
 
 # 6. Super-Smoother
 
-# 7. Leave-K-Out Cross-Validation
+---
+
+**Overview:**
+
+---
+
+```{r}
+super_smoother = function(X, Y, kernel_func, H_array,# S_array,
+                          error_estimate="loocv", lko_window=2, error_bdw=NA) {
+  # H_array is the set of candidate bandwidths
+  m = length(H_array)
+  n = length(X)
+  
+  k = (m+1)/2
+  if (is.na(error_bdw)) {
+    error_bdw = H_array[k]
+  }
+  
+  # fixed "outer" smoother
+  S_star_h = get_S(X, kernel_func, error_bdw)
+  
+  # get performance measures at each point for each candidate bandwidth
+  smooth_list = vector(mode="list", length=m)
+  p_hat_list = vector(mode="list", length=m) # smoothed performance measure
+  for (i in 1:m) {
+    h = H_array[i]
+    
+    S_h = get_S(X, kernel_func, h) # smoothing matrix
+    #S_h = S_array[i]
+    
+    sk_hat_h = S_h %*% Y
+    smooth_list[[h]] = sk_hat_h
+    
+    if (error_estimate=="loocv") {
+      error_h = (Y - sk_hat_h)/(1 - diag(S_h)) 
+    }
+    else if (error_estimate=="lkocv") {
+      error_h = c()
+      for (j in 1:n) {
+        yj = Y[j]
+        Y_temp = Y
+        Y_temp[max((j-lko_window),1):min((j+lko_window),n)] = yj
+        sk_hatj = dot(c(S_h[1:n,j]), Y_temp)
+        
+        num = Y[j] - sk_hatj
+        den = 1 - sum(S_h[max((j-lko_window),1):min((j+lko_window),n), j])
+        error_j = num/den
+        
+        error_h = c(error_h, c(error_j))
+      }
+    }
+
+    g_h = abs(error_h)
+    
+    # smooth errors
+    p_hat_h = S_star_h %*% g_h
+    p_hat_list[[i]] = p_hat_h
+  }
+  
+  p_hat_matrix = matrix(unlist(p_hat_list), ncol=m)
+  smooth_matrix = matrix(unlist(smooth_list), ncol=m)
+  
+  # pick best bandwidths
+  min_indices = argmin(p_hat_matrix)
+  h_min = c()
+  for (i in 1:n) {
+    h_min = c(h_min, H_array[min_indices[i]])
+  }
+  
+  # smooth best bandwidths
+  smoothed_best_h = S_star_h %*% h_min
+  smoothed_best_h = round(smoothed_best_h, 6) # floats would go below min(H) sometimes
+  
+  # use bandwidths to predict
+  sk_hat = c()
+  for (i in 1:n) { 
+    h_i = smoothed_best_h[i]
+    h_minus = max(H_array[H_array <= h_i])
+    h_plus = min(H_array[H_array >= h_i])
+    
+    # interpolate higher and lower bandwidths
+    if (h_minus==h_plus) {
+      p = 0
+    }
+    else {
+      p = (h_i - h_minus)/(h_plus - h_minus)
+    }
+    
+    sk_i = p*smooth_list[[h_plus]][i] + (1-p)*smooth_list[[h_minus]][i]
+    sk_hat = c(sk_hat, c(sk_i))
+  }
+  return(list(sk_hat, h_min, smoothed_best_h))
+}
+```
+
+# 7. K-Block Cross-Validation
+
+---
+
+**Overview:**
+
+---
 
 # 8. References
 
