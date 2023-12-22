@@ -1,7 +1,7 @@
 ---
 title: "Smoothing Temperature Data"
 author: "Steve Bischoff"
-date: "2023-12-19"
+date: "2023-12-22"
 output:
   pdf_document: default
   html_document: default
@@ -12,6 +12,7 @@ knitr::opts_chunk$set(echo = FALSE)
 ```
 
 ```{r include=FALSE, warning=FALSE}
+suppressWarnings(library(knitr))
 suppressWarnings(library(ggplot2))
 suppressWarnings(library(reshape2))
 suppressWarnings(library(tseries))
@@ -97,17 +98,24 @@ gg = ggplot(data1_aus[low:high,], aes(x=DATE, y=TMAX)) + geom_line() + labs(titl
 print(gg)
 ```
 
-The graph is visually unappealing due to daily temperature fluctuations. This noise also makes it difficult to generalize and identify trends. As just one example: the winter of 96-97 clearly has the lowest lows of these years, but was that cold spell an aberration or did it truly have the coldest winter?
+The graph is visually unappealing due to daily temperature fluctuations. This noise also makes it difficult to generalize and identify trends. As just one example: the winter of 1996-1997 clearly has the lowest lows of these years, but was that cold spell an aberration or did it truly have the coldest winter?
 
 This project investigates the application of automated smoothing methods to temperature data. Temperature data has several features that complicate the task. These features are detailed in Section {X}, and potential solutions are discussed in subsequent sections. I find that *Super-Smoothing with K-Block Cross-Validation* does a pretty good job of smoothing the data where other methods fail. 
 
 ## 1.1 Data
 
-NOAA data request
+The data used in this project comes from the National Oceanic and Atmospheric Administration (NOAA) [1].  I used the search tool to find stations that have had 100% Daily Summary coverage for many decades.  
 
-Austin, San Diego, Minneapolis, Baltimore
+I wanted to investigate temperature smoothing across a wide variety of climates, so I requested data from 4 different cities. The following table provides a summary: 
 
-Available back into at least the 40s. Truncated to 1993 - 2022 to make computation more manageable.
+```{r results='asis'}
+table_df = data.frame(City=c("Austin", "San Diego", "Minneapolis", "Baltimore"),
+                      StationID=c("USW00013958","USW00023188","USW00014922","USW00093721"),
+                      FirstDate=c("1938-06-01","1939-07-01","1938-04-09","1939-07-01"))
+kable(table_df, col.names=c("City", "Station ID", "First Available"))
+```
+
+To make computation more manageable, I truncated each data set to 1993 - 2022. Below are time series and box plots of the truncated data sets.  
 
 ```{r}
 plot_df = data.frame(Daily_High_Temp=c(data1_aus$TMAX, data1_sd$TMAX,
@@ -129,7 +137,7 @@ print(gg)
 
 ```{r}
 par(mar=c(5,5,4,2))
-boxplot(Daily_High_Temp ~ City, plot_df, cex.lab=1, cex.axis=1)
+boxplot(Daily_High_Temp ~ City, plot_df, cex.lab=1, cex.axis=1, main="Daily Highs Boxplot by City", ylab="High Temp. (F)")
 ```
 
 # 2. Kernel Smoothing
@@ -444,7 +452,7 @@ For each city, the residuals are positively correlated with the lag-1 and lag-2 
 
 ---
 
-**Overview:**
+**Overview:** The super-smoother helps with the problem of non-constant variance by selecting different "optimal" bandwidths at different points. LOOCV again performs poorly as the bandwidth selection method, choosing the lowest candidate bandwidth at most points.
 
 ---
 
@@ -478,7 +486,7 @@ super_smoother = function(X, Y, kernel_func, H_array,# S_array,
     if (error_estimate=="loocv") {
       error_h = (Y - sk_hat_h)/(1 - diag(S_h)) 
     }
-    else if (error_estimate=="lkocv") {
+    else if (error_estimate=="kbcv") {
       error_h = c()
       for (j in 1:n) {
         yj = Y[j]
@@ -537,15 +545,187 @@ super_smoother = function(X, Y, kernel_func, H_array,# S_array,
 }
 ```
 
+```{r}
+#H_array = c(3,11,19,27,35,43,51,59,67,75,83)
+H_array = c(7,15,23,31,39,47,55,63,71,79,87)
+```
+
+### Austin
+
+#### Error Bandwidth - mid
+
+```{r}
+smooth_list1_aus = super_smoother(time_idx1_aus, high1_aus, dnorm, 
+                                  H_array, error_estimate="loocv")
+```
+
+```{r}
+Y_hat1_aus = smooth_list1_aus[[1]]
+h_min1_aus = smooth_list1_aus[[2]]
+smoothed_h_min1_aus = smooth_list1_aus[[3]]
+```
+
+```{r}
+mean(smoothed_h_min1_aus)
+```
+
+#### Error Bandwidth - H[2]
+
+```{r}
+smooth_list1_aus = super_smoother(time_idx1_aus, high1_aus, dnorm, H_array,  error_estimate="loocv", error_bdw=H_array[2])
+```
+
+```{r}
+Y_hat1_aus = smooth_list1_aus[[1]]
+h_min1_aus = smooth_list1_aus[[2]]
+smoothed_h_min1_aus = smooth_list1_aus[[3]]
+```
+
+```{r}
+mean(smoothed_h_min1_aus)
+```
+
+```{r}
+data1_aus$Y_hat = Y_hat1_aus
+```
+
+### San Diego
+
+#### Error Bandwidth - mid
+
+```{r}
+smooth_list1_sd = super_smoother(time_idx1_sd, high1_sd, dnorm, H_array, error_estimate="loocv")
+```
+
+```{r}
+Y_hat1_sd = smooth_list1_sd[[1]]
+h_min1_sd = smooth_list1_sd[[2]]
+smoothed_h_min1_sd = smooth_list1_sd[[3]]
+```
+
+```{r}
+mean(smoothed_h_min1_sd)
+```
+
+#### Error Bandwidth - H[2]
+
+```{r}
+smooth_list1_sd = super_smoother(time_idx1_sd, high1_sd, dnorm, H_array, 
+                                  error_estimate="loocv", error_bdw=H_array[2])
+```
+
+```{r}
+Y_hat1_sd = smooth_list1_sd[[1]]
+h_min1_sd = smooth_list1_sd[[2]]
+smoothed_h_min1_sd = smooth_list1_sd[[3]]
+```
+
+```{r}
+mean(smoothed_h_min1_sd)
+```
+
+```{r}
+data1_sd$Y_hat = Y_hat1_sd
+```
+
+### Minneapolis
+
+#### Error Bandwidth - mid
+
+```{r}
+smooth_list1_mn = super_smoother(time_idx1_mn, high1_mn, dnorm, H_array, 
+                                  error_estimate="loocv")
+```
+
+```{r}
+Y_hat1_mn = smooth_list1_mn[[1]]
+h_min1_mn = smooth_list1_mn[[2]]
+smoothed_h_min1_mn = smooth_list1_mn[[3]]
+```
+
+```{r}
+mean(smoothed_h_min1_mn)
+```
+
+#### Error Bandwidth - H[2]
+
+```{r}
+smooth_list1_mn = super_smoother(time_idx1_mn, high1_mn, dnorm, H_array,
+                                 error_estimate="loocv", error_bdw=H_array[2])
+```
+
+```{r}
+Y_hat1_mn = smooth_list1_mn[[1]]
+h_min1_mn = smooth_list1_mn[[2]]
+smoothed_h_min1_mn = smooth_list1_mn[[3]]
+```
+
+```{r}
+mean(smoothed_h_min1_mn)
+```
+
+```{r}
+data1_mn$Y_hat = Y_hat1_mn
+```
+
+### Baltimore
+
+#### Error Bandwidth - mid
+
+```{r}
+smooth_list1_bt = super_smoother(time_idx1_bt, high1_bt, dnorm, H_array,
+                                 error_estimate="loocv")
+```
+
+```{r}
+Y_hat1_bt = smooth_list1_bt[[1]]
+h_min1_bt = smooth_list1_bt[[2]]
+smoothed_h_min1_bt = smooth_list1_bt[[3]]
+```
+
+```{r}
+mean(smoothed_h_min1_bt)
+```
+
+#### Error Bandwidth - H[2]
+
+```{r}
+smooth_list1_bt = super_smoother(time_idx1_bt, high1_bt, dnorm, H_array,
+                                  error_estimate="loocv", error_bdw=H_array[2])
+```
+
+```{r}
+Y_hat1_bt = smooth_list1_bt[[1]]
+h_min1_bt = smooth_list1_bt[[2]]
+smoothed_h_min1_bt = smooth_list1_bt[[3]]
+```
+
+```{r}
+mean(smoothed_h_min1_bt)
+```
+
+```{r}
+plot_df$Y_hat = c(Y_hat1_aus, Y_hat1_sd, Y_hat1_mn, Y_hat1_bt)
+plot_df_trunc = plot_df[(plot_df$Date >= "1995-10-01") & (plot_df$Date <= "1999-09-30"),]
+```
+
+```{r}
+gg = ggplot(plot_df_trunc) + geom_line(aes(x=Date, y=Daily_High_Temp), color="gray") + geom_line(aes(x=Date, y=Y_hat), color="red") + facet_wrap( ~ City, scales="free") + labs(title="Daily High Temperatures with LOOCV Super-Smooth", x="Date", y="High Temp. (F)") + theme(plot.title = element_text(hjust = 0.5))
+print(gg)
+```
+
 # 7. K-Block Cross-Validation
 
 ---
 
-**Overview:**
+**Overview:** Using *K*-block cross-validation (KBCV) instead of LOOCV helps with dependent data. The super-smoother that uses KBCV for bandwidth selection produces good smoothing results.  
 
 ---
 
-# 8. References
+# 8. Further Research
+
+
+# 9. References
 
 [1] https://www.ncei.noaa.gov/cdo-web/
 
