@@ -448,7 +448,7 @@ acf(error1_bt, lag=20, main="Baltimore", cex.main=1.5, cex.lab=1)
 
 For each city, the residuals are positively correlated with the lag-1 and lag-2 residuals. For Minneapolis, the residuals are even positively correlated with the lag-3 residuals. 
 
-# 6. Super-Smoother
+# 6. Super-smoother
 
 ---
 
@@ -456,10 +456,27 @@ For each city, the residuals are positively correlated with the lag-1 and lag-2 
 
 ---
 
+Up to this point, I've only discussed smoothers that use a single bandwidth across an entire data set. These can struggle when the data have non-constant variance, as different bandwidths are appropriate in different regions.
+
+The super-smoother tries to solve this problem by allowing the bandwidth to vary across the data.[X] Like the previous LOOCV algorithm, the super-smoother is given a set of candidate bandwidths and computes the LOOCV error at each point for each bandwidth. A second smooth is then applied to these errors. At each point in the data set, the bandwidth with the smallest smoothed LOOCV error is selected as the "optimal" bandwidth at that point. A third smooth is applied to these optimal bandwidths to ease the transitions between different variance regions. Finally, the smoothed optimal bandwidths are used to calculate the output values of the super-smoother. 
+
+The first figure below from [2] shows an example non-constant variance data set with a super-smoother fit given 3 candidate bandwidths (0.05, 0.2, 0.5). The second figure shows the optimal bandwidth selected by LOOCV at each point as well as the smooth applied to these bandwidths. Note that higher bandwidths are selected in higher-variance regions, allowing the smooth to cut through the noise, while lower bandwidths are selected in lower-variance regions, allowing the smooth to better capture the trend.
+
+{INSERT FIGURES}
+
+I tested the LOOCV super-smoother on each data set. After some trial-and-error, I used $H = (7, 15, 23, 31, 39, 47, 55, 63, 71, 79, 87)$ as the set of candidate bandwidths. 
+
+The decision to use a set of 11 candidate bandwidths introduced a minor complication. The paper introducing the super-smoother uses a set of 3 candidate bandwidths and recommends using the second-largest of these when applying the second and third smooths to the LOOCV errors and optimal bandwidths, respectively. This recommendation is ambiguous for a larger set of candidates: do we use the second-largest or the median bandwidth for the later smooths? I decided to test both options (15 and 47).
+
 ```{r}
 super_smoother = function(X, Y, kernel_func, H_array,# S_array,
-                          error_estimate="loocv", lko_window=2, error_bdw=NA) {
-  # H_array is the set of candidate bandwidths
+                          error_estimate="loocv", kb_window=2, error_bdw=NA) {
+  # H_array: the set of candidate bandwidths
+  # error_estimate: "loocv" or "kbcv"
+  # kb_window: if error_estimate=="kbcv", the length of one side of the k-block 
+  # window
+  # error_bdw: the bandwidth to use for the 2nd and 3rd smooths
+  
   m = length(H_array)
   n = length(X)
   
@@ -491,11 +508,11 @@ super_smoother = function(X, Y, kernel_func, H_array,# S_array,
       for (j in 1:n) {
         yj = Y[j]
         Y_temp = Y
-        Y_temp[max((j-lko_window),1):min((j+lko_window),n)] = yj
+        Y_temp[max((j-kb_window),1):min((j+kb_window),n)] = yj
         sk_hatj = dot(c(S_h[1:n,j]), Y_temp)
         
         num = Y[j] - sk_hatj
-        den = 1 - sum(S_h[max((j-lko_window),1):min((j+lko_window),n), j])
+        den = 1 - sum(S_h[max((j-kb_window),1):min((j+kb_window),n), j])
         error_j = num/den
         
         error_h = c(error_h, c(error_j))
@@ -519,16 +536,16 @@ super_smoother = function(X, Y, kernel_func, H_array,# S_array,
     h_min = c(h_min, H_array[min_indices[i]])
   }
   
-  # smooth best bandwidths
+  # smooth optimal bandwidths
   smoothed_best_h = S_star_h %*% h_min
   smoothed_best_h = round(smoothed_best_h, 6) # floats would go below min(H) sometimes
   
-  # use bandwidths to predict
+  # use smoothed optimal bandwidths to estimate
   sk_hat = c()
   for (i in 1:n) { 
-    h_i = smoothed_best_h[i]
-    h_minus = max(H_array[H_array <= h_i])
-    h_plus = min(H_array[H_array >= h_i])
+    h_i = smoothed_best_h[i] # smoothed optimal bandwidth
+    h_minus = max(H_array[H_array <= h_i]) # closest candidate bandwidth below
+    h_plus = min(H_array[H_array >= h_i]) # closest candidate bandwidth above
     
     # interpolate higher and lower bandwidths
     if (h_minus==h_plus) {
@@ -544,6 +561,8 @@ super_smoother = function(X, Y, kernel_func, H_array,# S_array,
   return(list(sk_hat, h_min, smoothed_best_h))
 }
 ```
+
+## 6.1 Results
 
 ```{r}
 #H_array = c(3,11,19,27,35,43,51,59,67,75,83)
@@ -730,3 +749,5 @@ print(gg)
 [1] https://www.ncei.noaa.gov/cdo-web/
 
 [2] Givens and Hoeting (2012), Computational Statistics.
+
+[X] {Super-Smoother citation}
