@@ -1,7 +1,7 @@
 ---
 title: "Smoothing Temperature Data"
 author: "Steve Bischoff"
-date: "2023-12-22"
+date: "2023-12-24"
 output:
   pdf_document: default
   html_document: default
@@ -448,7 +448,7 @@ acf(error1_bt, lag=20, main="Baltimore", cex.main=1.5, cex.lab=1)
 
 For each city, the residuals are positively correlated with the lag-1 and lag-2 residuals. For Minneapolis, the residuals are even positively correlated with the lag-3 residuals. 
 
-# 6. Super-smoother
+# 6. Super-Smoother
 
 ---
 
@@ -458,15 +458,21 @@ For each city, the residuals are positively correlated with the lag-1 and lag-2 
 
 Up to this point, I've only discussed smoothers that use a single bandwidth across an entire data set. These can struggle when the data have non-constant variance, as different bandwidths are appropriate in different regions.
 
-The super-smoother tries to solve this problem by allowing the bandwidth to vary across the data.[X] Like the previous LOOCV algorithm, the super-smoother is given a set of candidate bandwidths and computes the LOOCV error at each point for each bandwidth. A second smooth is then applied to these errors. At each point in the data set, the bandwidth with the smallest smoothed LOOCV error is selected as the "optimal" bandwidth at that point. A third smooth is applied to these optimal bandwidths to ease the transitions between different variance regions. Finally, the smoothed optimal bandwidths are used to calculate the output values of the super-smoother. 
+The super-smoother tries to solve this problem by allowing the bandwidth to vary across the data.[3] Like the previous LOOCV algorithm, the super-smoother is given a set of candidate bandwidths and computes the LOOCV error at each point for each bandwidth. A second smooth is then applied to these errors. At each point in the data set, the bandwidth with the smallest smoothed LOOCV error is selected as the "optimal" bandwidth at that point. A third smooth is applied to these optimal bandwidths to ease the transitions between different variance regions. Finally, the smoothed optimal bandwidths are used to calculate the output values of the super-smoother. 
 
 The first figure below from [2] shows an example non-constant variance data set with a super-smoother fit given 3 candidate bandwidths (0.05, 0.2, 0.5). The second figure shows the optimal bandwidth selected by LOOCV at each point as well as the smooth applied to these bandwidths. Note that higher bandwidths are selected in higher-variance regions, allowing the smooth to cut through the noise, while lower bandwidths are selected in lower-variance regions, allowing the smooth to better capture the trend.
 
-{INSERT FIGURES}
+```{r echo=FALSE, fig.cap="Non-constant variance data with LOOCV super-smooth (solid line)", out.width = '100%'}
+knitr::include_graphics("images/supersmoother_data.png")
+```
+
+```{r echo=FALSE, fig.cap="Selected bandwidths with smooth", out.width = '100%'}
+knitr::include_graphics("images/supersmoother_bandwidths.png")
+```
 
 I tested the LOOCV super-smoother on each data set. After some trial-and-error, I used $H = (7, 15, 23, 31, 39, 47, 55, 63, 71, 79, 87)$ as the set of candidate bandwidths. 
 
-The decision to use a set of 11 candidate bandwidths introduced a minor complication. The paper introducing the super-smoother uses a set of 3 candidate bandwidths and recommends using the second-largest of these when applying the second and third smooths to the LOOCV errors and optimal bandwidths, respectively. This recommendation is ambiguous for a larger set of candidates: do we use the second-largest or the median bandwidth for the later smooths? I decided to test both options (15 and 47).
+The decision to use a set of 11 candidate bandwidths introduced a minor complication. The paper introducing the super-smoother uses a set of 3 candidate bandwidths and recommends using the second-largest of these when applying the second and third smooths to the LOOCV errors and optimal bandwidths, respectively (call the bandwidth of these smooths $h^*$). This recommendation is ambiguous for a larger set of candidates: do we use the second-largest or the median bandwidth for the later smooths? I decided to test both options ($h^*=15$ and $h^*=47$).
 
 ```{r}
 super_smoother = function(X, Y, kernel_func, H_array,# S_array,
@@ -474,7 +480,7 @@ super_smoother = function(X, Y, kernel_func, H_array,# S_array,
   # H_array: the set of candidate bandwidths
   # error_estimate: "loocv" or "kbcv"
   # kb_window: if error_estimate=="kbcv", the length of one side of the k-block 
-  # window
+  ### window
   # error_bdw: the bandwidth to use for the 2nd and 3rd smooths
   
   m = length(H_array)
@@ -565,15 +571,11 @@ super_smoother = function(X, Y, kernel_func, H_array,# S_array,
 ## 6.1 Results
 
 ```{r}
-#H_array = c(3,11,19,27,35,43,51,59,67,75,83)
 H_array = c(7,15,23,31,39,47,55,63,71,79,87)
 ```
 
-### Austin
-
-#### Error Bandwidth - mid
-
 ```{r}
+# Austin
 smooth_list1_aus = super_smoother(time_idx1_aus, high1_aus, dnorm, 
                                   H_array, error_estimate="loocv")
 ```
@@ -585,10 +587,8 @@ smoothed_h_min1_aus = smooth_list1_aus[[3]]
 ```
 
 ```{r}
-mean(smoothed_h_min1_aus)
+mid_mean_aus = mean(smoothed_h_min1_aus)
 ```
-
-#### Error Bandwidth - H[2]
 
 ```{r}
 smooth_list1_aus = super_smoother(time_idx1_aus, high1_aus, dnorm, H_array,  error_estimate="loocv", error_bdw=H_array[2])
@@ -601,18 +601,15 @@ smoothed_h_min1_aus = smooth_list1_aus[[3]]
 ```
 
 ```{r}
-mean(smoothed_h_min1_aus)
+low_mean_aus = mean(smoothed_h_min1_aus)
 ```
 
 ```{r}
 data1_aus$Y_hat = Y_hat1_aus
 ```
 
-### San Diego
-
-#### Error Bandwidth - mid
-
 ```{r}
+# San Diego
 smooth_list1_sd = super_smoother(time_idx1_sd, high1_sd, dnorm, H_array, error_estimate="loocv")
 ```
 
@@ -623,10 +620,8 @@ smoothed_h_min1_sd = smooth_list1_sd[[3]]
 ```
 
 ```{r}
-mean(smoothed_h_min1_sd)
+mid_mean_sd = mean(smoothed_h_min1_sd)
 ```
-
-#### Error Bandwidth - H[2]
 
 ```{r}
 smooth_list1_sd = super_smoother(time_idx1_sd, high1_sd, dnorm, H_array, 
@@ -640,18 +635,15 @@ smoothed_h_min1_sd = smooth_list1_sd[[3]]
 ```
 
 ```{r}
-mean(smoothed_h_min1_sd)
+low_mean_sd = mean(smoothed_h_min1_sd)
 ```
 
 ```{r}
 data1_sd$Y_hat = Y_hat1_sd
 ```
 
-### Minneapolis
-
-#### Error Bandwidth - mid
-
 ```{r}
+# Minneapolis
 smooth_list1_mn = super_smoother(time_idx1_mn, high1_mn, dnorm, H_array, 
                                   error_estimate="loocv")
 ```
@@ -663,10 +655,8 @@ smoothed_h_min1_mn = smooth_list1_mn[[3]]
 ```
 
 ```{r}
-mean(smoothed_h_min1_mn)
+mid_mean_mn = mean(smoothed_h_min1_mn)
 ```
-
-#### Error Bandwidth - H[2]
 
 ```{r}
 smooth_list1_mn = super_smoother(time_idx1_mn, high1_mn, dnorm, H_array,
@@ -680,18 +670,15 @@ smoothed_h_min1_mn = smooth_list1_mn[[3]]
 ```
 
 ```{r}
-mean(smoothed_h_min1_mn)
+low_mean_mn = mean(smoothed_h_min1_mn)
 ```
 
 ```{r}
 data1_mn$Y_hat = Y_hat1_mn
 ```
 
-### Baltimore
-
-#### Error Bandwidth - mid
-
 ```{r}
+# Baltimore
 smooth_list1_bt = super_smoother(time_idx1_bt, high1_bt, dnorm, H_array,
                                  error_estimate="loocv")
 ```
@@ -703,10 +690,8 @@ smoothed_h_min1_bt = smooth_list1_bt[[3]]
 ```
 
 ```{r}
-mean(smoothed_h_min1_bt)
+mid_mean_bt = mean(smoothed_h_min1_bt)
 ```
-
-#### Error Bandwidth - H[2]
 
 ```{r}
 smooth_list1_bt = super_smoother(time_idx1_bt, high1_bt, dnorm, H_array,
@@ -720,8 +705,20 @@ smoothed_h_min1_bt = smooth_list1_bt[[3]]
 ```
 
 ```{r}
-mean(smoothed_h_min1_bt)
+low_mean_bt = mean(smoothed_h_min1_bt)
 ```
+
+Unfortunately, the super-smoother with LOOCV bandwidth selection also mostly fails to give good smooths of the data. As seen in the table below, for each city and choice of $h^*$, the mean of the bandwidths chosen by the super-smoother across the data set is fairly close to 7, the smallest candidate bandwidth. In other words, the LOOCV super-smoother selects the smallest possible bandwidth as "optimal" at most points in the data set. (I tested sets of candidate bandwidths that contained even smaller values and got the same result.)
+
+```{r results='asis'}
+table_df = data.frame(City=c("Austin", "San Diego", "Minneapolis", "Baltimore"),
+                      mid_mean=c(mid_mean_aus,mid_mean_sd,mid_mean_mn,mid_mean_bt),
+                      low_mean=c(low_mean_aus,low_mean_sd,low_mean_mn,low_mean_bt))
+kable(table_df, caption="Mean LOOCV Super-Smoother Bandwidth by City", 
+      col.names=c("City", "Mean Bandwidth (h*=47)", "Mean Bandwidth (h*=15)"))
+```
+
+Setting $h*$ to the smaller value of 15 gives a better smooth than $h*=47$, but not by much. The figure below displays parts of the smooths given by the LOOCV super-smoother with $h^* = 15$. The smooths are generally very choppy with only a few bright spots (e.g. Fall 1996 and Spring 1997 in Austin, Fall 1997 in San Diego). If lower bandwidths had been included in the set of candidates, the smooths would be even worse.
 
 ```{r}
 plot_df$Y_hat = c(Y_hat1_aus, Y_hat1_sd, Y_hat1_mn, Y_hat1_bt)
@@ -729,7 +726,13 @@ plot_df_trunc = plot_df[(plot_df$Date >= "1995-10-01") & (plot_df$Date <= "1999-
 ```
 
 ```{r}
-gg = ggplot(plot_df_trunc) + geom_line(aes(x=Date, y=Daily_High_Temp), color="gray") + geom_line(aes(x=Date, y=Y_hat), color="red") + facet_wrap( ~ City, scales="free") + labs(title="Daily High Temperatures with LOOCV Super-Smooth", x="Date", y="High Temp. (F)") + theme(plot.title = element_text(hjust = 0.5))
+gg = ggplot(plot_df_trunc) + 
+  geom_line(aes(x=Date, y=Daily_High_Temp), color="gray") + 
+  geom_line(aes(x=Date, y=Y_hat), color="red") + 
+  facet_wrap( ~ City, scales="free") + 
+  labs(title="Daily High Temperatures with LOOCV Super-Smooth (h*=15)", 
+       x="Date", y="High Temp. (F)") + 
+  theme(plot.title = element_text(hjust = 0.5))
 print(gg)
 ```
 
@@ -750,4 +753,4 @@ print(gg)
 
 [2] Givens and Hoeting (2012), Computational Statistics.
 
-[X] {Super-Smoother citation}
+[3] Friedman (1984), A variable span smoother.
