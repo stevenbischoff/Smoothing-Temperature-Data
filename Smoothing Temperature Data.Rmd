@@ -7,6 +7,8 @@ output:
   html_document: default
 ---
 
+# Contents
+
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = FALSE)
 ```
@@ -14,6 +16,7 @@ knitr::opts_chunk$set(echo = FALSE)
 ```{r include=FALSE, warning=FALSE}
 suppressWarnings(library(knitr))
 suppressWarnings(library(ggplot2))
+suppressWarnings(library(cowplot))
 suppressWarnings(library(reshape2))
 suppressWarnings(library(tseries))
 suppressWarnings(library(tidyverse))
@@ -255,7 +258,13 @@ plot_df_trunc = plot_df[(plot_df$Date >= "1995-10-01") & (plot_df$Date <= "1999-
 ```
 
 ```{r}
-gg = ggplot(plot_df_trunc) + geom_line(aes(x=Date, y=Daily_High_Temp), color="gray") + geom_line(aes(x=Date, y=Y_hat), color="red") + facet_wrap( ~ City, scales="free") + labs(title="Daily High Temperatures with Normal Kernel Smooth (h=14)", x="Date", y="High Temp. (F)") + theme(plot.title = element_text(hjust = 0.5))
+gg = ggplot(plot_df_trunc) + 
+  geom_line(aes(x=Date, y=Daily_High_Temp), color="gray") + 
+  geom_line(aes(x=Date, y=Y_hat), color="red") + 
+  facet_wrap( ~ City, scales="free") + 
+  labs(title="Daily High Temperatures with Normal Kernel Smooth (h=14)", 
+       x="Date", y="High Temp. (F)") + 
+  theme(plot.title = element_text(hjust = 0.5))
 print(gg)
 ```
 
@@ -365,7 +374,12 @@ plot_df_loocv = data.frame(h=seq(1, 20, by=1),
 ```
 
 ```{r}
-gg = ggplot(plot_df_loocv, aes(x=h, y=MSE)) + geom_line() + facet_wrap( ~ City, scales="free") + labs(title="LOOCV MSE by bandwidth", y="Mean Squared Error (MSE)", x="Bandwidth") + theme(plot.title = element_text(hjust = 0.5))
+gg = ggplot(plot_df_loocv, aes(x=h, y=MSE)) + 
+  geom_line() + 
+  facet_wrap( ~ City, scales="free") + 
+  labs(title="LOOCV MSE by bandwidth", 
+       y="Mean Squared Error (MSE)", x="Bandwidth") + 
+  theme(plot.title = element_text(hjust = 0.5))
 print(gg)
 ```
 
@@ -391,7 +405,10 @@ The seasons are the primary short-term factor affecting temperature variance. Ta
 ```{r}
 low=1000
 high=2500
-gg = ggplot(data1_aus[low:high,], aes(x=DATE, y=TMAX)) + geom_line() + labs(title="Austin Daily Highs", x="Date", y="High Temp. (F)") + theme(plot.title = element_text(hjust = 0.5))
+gg = ggplot(data1_aus[low:high,], aes(x=DATE, y=TMAX)) + 
+  geom_line() + 
+  labs(title="Austin Daily Highs", x="Date", y="High Temp. (F)") + 
+  theme(plot.title = element_text(hjust = 0.5))
 print(gg)
 ```
 
@@ -411,7 +428,8 @@ high=1450
 rect = data.frame(xmin=as.Date("1996-02-18"), xmax=as.Date("1996-02-27"), ymin=-Inf, ymax=Inf)
 gg =  ggplot(data1_aus[low:high,], aes(x=DATE, y=TMAX)) + 
   geom_line() + 
-  geom_rect(data=rect, aes(xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax), fill="yellow", alpha=0.4, inherit.aes=FALSE) + 
+  geom_rect(data=rect, aes(xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax), 
+            fill="yellow", alpha=0.4, inherit.aes=FALSE) + 
   labs(title="Austin Daily Highs", x="Date", y="High Temp. (F)") + 
   theme(plot.title = element_text(hjust = 0.5))
 print(gg)
@@ -544,7 +562,7 @@ super_smoother = function(X, Y, kernel_func, H_array,# S_array,
   
   # smooth optimal bandwidths
   smoothed_best_h = S_star_h %*% h_min
-  smoothed_best_h = round(smoothed_best_h, 6) # floats would go below min(H) sometimes
+  smoothed_best_h = round(smoothed_best_h, 6) # floats would go below min(H)
   
   # use smoothed optimal bandwidths to estimate
   sk_hat = c()
@@ -591,7 +609,8 @@ mid_mean_aus = mean(smoothed_h_min1_aus)
 ```
 
 ```{r}
-smooth_list1_aus = super_smoother(time_idx1_aus, high1_aus, dnorm, H_array,  error_estimate="loocv", error_bdw=H_array[2])
+smooth_list1_aus = super_smoother(time_idx1_aus, high1_aus, dnorm, H_array,
+                                  error_estimate="loocv", error_bdw=H_array[2])
 ```
 
 ```{r}
@@ -610,7 +629,8 @@ data1_aus$Y_hat = Y_hat1_aus
 
 ```{r}
 # San Diego
-smooth_list1_sd = super_smoother(time_idx1_sd, high1_sd, dnorm, H_array, error_estimate="loocv")
+smooth_list1_sd = super_smoother(time_idx1_sd, high1_sd, dnorm, H_array,
+                                 error_estimate="loocv")
 ```
 
 ```{r}
@@ -744,6 +764,162 @@ print(gg)
 
 ---
 
+The super-smoother is designed to overcome difficulties posed by data with non-constant variance, but it still fails on temperature data when using LOOCV to select bandwidths. This is due in part to the dependent nature of temperature data. If the high temperature on a given day deviates from the broader trend, the highs on days shortly before and after are likely to deviate from the broader trend in the same way. In LOOCV, surrounding days are used to predict the day that has been left out. As a result, the LOOCV prediction of the high temperature on a given day contains information about the broader trend we're trying to capture (good) but also information about how that day deviates from the trend (bad).
+
+*K*-block cross validation is a LOOCV alternative designed to help with this problem.[4] 
+
+```{r}
+smooth_list1_aus = super_smoother(time_idx1_aus, high1_aus, dnorm, H_array,
+                                  error_estimate="kbcv", kb_window=3,
+                                  error_bdw=H_array[2]) # 7,19
+```
+
+```{r}
+Y_hat1_aus = smooth_list1_aus[[1]]
+h_min1_aus = smooth_list1_aus[[2]]
+smoothed_h_min1_aus = smooth_list1_aus[[3]]
+
+data1_aus$Y_hat = Y_hat1_aus
+data1_aus$h_min = h_min1_aus
+data1_aus$smoothed_h_min = smoothed_h_min1_aus
+```
+
+```{r}
+mean(smoothed_h_min1_aus)
+```
+
+```{r}
+# San Diego
+smooth_list1_sd = super_smoother(time_idx1_sd, high1_sd, dnorm, H_array,
+                                 error_estimate="kbcv", kb_window=3,
+                                 error_bdw=H_array[2])
+```
+
+```{r}
+Y_hat1_sd = smooth_list1_sd[[1]]
+h_min1_sd = smooth_list1_sd[[2]]
+smoothed_h_min1_sd = smooth_list1_sd[[3]]
+
+data1_sd$Y_hat = Y_hat1_sd
+data1_sd$h_min = h_min1_sd
+data1_sd$smoothed_h_min = smoothed_h_min1_sd
+```
+
+```{r}
+mean(smoothed_h_min1_sd)
+```
+
+```{r}
+plot_df_temp = data.frame(TMAX=c(data1_aus$TMAX, data1_sd$TMAX),
+                     DATE=c(data1_aus$DATE, data1_sd$DATE),
+                     Y_hat = c(data1_aus$Y_hat, data1_sd$Y_hat),
+                     h_min = c(data1_aus$h_min, data1_sd$h_min),
+                     smoothed_h_min = c(data1_aus$smoothed_h_min,
+                                        data1_sd$smoothed_h_min),
+                     City=c(rep("Austin", n1_aus),
+                            rep("S.D.", n1_sd)))
+```
+
+```{r}
+plot_df_temp_trunc = plot_df_temp[(plot_df_temp$DATE >= "1995-10-01") & (
+  plot_df_temp$DATE <= "1999-09-30"),]
+
+gg1 = ggplot(plot_df_temp_trunc) + 
+  geom_line(aes(x=DATE, y=TMAX), color="gray") + 
+  geom_line(aes(x=DATE, y=Y_hat), color="red") +  
+  facet_wrap( ~ City, scale="free") + 
+  labs(title="Daily High Temperatures with KBCV Super-Smooth (h*=15, k=3)", 
+       x="", y="High Temp. (F)") + 
+  theme(plot.title = element_text(hjust = 0.5))
+
+gg2 = ggplot(plot_df_temp_trunc) + 
+  geom_point(aes(x=DATE, y=h_min), color="black") + 
+  geom_line(aes(x=DATE, y=smoothed_h_min), color="gray") +  
+  facet_wrap( ~ City) + 
+  labs(title="KBCV Super-Smoother (h*=15, k=3) Selected Bandwidths", 
+       x="Date", y="Selected Bandwidth") + 
+  theme(plot.title = element_text(hjust = 0.5))
+
+plot_grid(gg1, gg2, nrow=2, ncol=1)
+```
+
+```{r}
+# Minneapolis
+smooth_list1_mn = super_smoother(time_idx1_mn, high1_mn, dnorm, H_array,
+                                 error_estimate="kbcv", kb_window=3,
+                                 error_bdw=H_array[2])
+```
+
+```{r}
+Y_hat1_mn = smooth_list1_mn[[1]]
+h_min1_mn = smooth_list1_mn[[2]]
+smoothed_h_min1_mn = smooth_list1_mn[[3]]
+
+data1_mn$Y_hat = Y_hat1_mn
+data1_mn$h_min = h_min1_mn
+data1_mn$smoothed_h_min = smoothed_h_min1_mn
+```
+
+```{r}
+mean(smoothed_h_min1_mn)
+```
+
+```{r}
+# Baltimore
+smooth_list1_bt = super_smoother(time_idx1_bt, high1_bt, dnorm, H_array,
+                                 error_estimate="kbcv", kb_window=3,
+                                 error_bdw=H_array[2])
+```
+
+```{r}
+Y_hat1_bt = smooth_list1_bt[[1]]
+h_min1_bt = smooth_list1_bt[[2]]
+smoothed_h_min1_bt = smooth_list1_bt[[3]]
+
+data1_bt$Y_hat = Y_hat1_bt
+data1_bt$h_min = h_min1_bt
+data1_bt$smoothed_h_min = smoothed_h_min1_bt
+```
+
+```{r}
+mean(smoothed_h_min1_bt)
+```
+
+```{r}
+plot_df_temp = data.frame(TMAX=c(data1_mn$TMAX, data1_bt$TMAX),
+                     DATE=c(data1_mn$DATE, data1_bt$DATE),
+                     Y_hat = c(data1_mn$Y_hat, data1_bt$Y_hat),
+                     h_min = c(data1_mn$h_min, data1_bt$h_min),
+                     smoothed_h_min = c(data1_mn$smoothed_h_min,
+                                        data1_bt$smoothed_h_min),
+                     City=c(rep("Minneapolis", n1_mn),
+                            rep("Baltimore", n1_bt)))
+```
+
+```{r}
+plot_df_temp_trunc = plot_df_temp[(plot_df_temp$DATE >= "1995-10-01") & (
+  plot_df_temp$DATE <= "1999-09-30"),]
+
+gg1 = ggplot(plot_df_temp_trunc) + 
+  geom_line(aes(x=DATE, y=TMAX), color="gray") + 
+  geom_line(aes(x=DATE, y=Y_hat), color="red") +  
+  facet_wrap( ~ City, scale="free") + 
+  labs(title="Daily High Temperatures with KBCV Super-Smooth (h*=15, k=3)", 
+       x="", y="High Temp. (F)") + 
+  theme(plot.title = element_text(hjust = 0.5))
+#print(gg1)
+
+gg2 = ggplot(plot_df_temp_trunc) + 
+  geom_point(aes(x=DATE, y=h_min), color="black") + 
+  geom_line(aes(x=DATE, y=smoothed_h_min), color="gray") +  
+  facet_wrap( ~ City) + 
+  labs(title="KBCV Super-Smoother (h*=15, k=3) Selected Bandwidths", 
+       x="Date", y="Selected Bandwidth") + 
+  theme(plot.title = element_text(hjust = 0.5))
+#print(gg2)
+plot_grid(gg1, gg2, nrow=2, ncol=1)
+```
+
 # 8. Further Research
 
 
@@ -754,3 +930,5 @@ print(gg)
 [2] Givens and Hoeting (2012), Computational Statistics.
 
 [3] Friedman (1984), A variable span smoother.
+
+[4] Chow and Nolan (1994), A cross-validatory method for dependent data.
