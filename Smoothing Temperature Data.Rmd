@@ -91,7 +91,7 @@ date1_bt = data1_bt$DATE
 
 # 1. Introduction
 
-Smoothing methods are a popular way to identify the trend(s) in noisy data without having to construct a model of the data-generating process. Temperature data are a particularly appealing application of these methods. Figure 1 shows daily high temperatures in Austin, Texas in the late 90s:[1]
+Smoothing methods are a popular way to identify the trend(s) in noisy data without having to construct a model of the data-generating process. Temperature data are a particularly appealing application of these methods. Figure 1 shows daily high temperatures in Austin, Texas in the late 90s.[1]
 
 ```{r fig.cap="Austin daily high temperatures"}
 low=1000
@@ -109,13 +109,14 @@ This project investigates the application of automated smoothing methods to temp
 
 The data used in this project comes from the National Oceanic and Atmospheric Administration (NOAA).[1] I used the search tool to find stations that have had 100% Daily Summary coverage for many decades.  
 
-I wanted to investigate temperature smoothing across a wide variety of climates, so I requested data from 4 different cities. Table 1 provides a summary: 
+I wanted to investigate temperature smoothing across a wide variety of climates, so I requested data from 4 different cities. Table 1 provides a summary. 
 
-```{r fig.cap="Data source descriptions"}
+```{r results='asis'}
 table_df = data.frame(City=c("Austin", "San Diego", "Minneapolis", "Baltimore"),
                       StationID=c("USW00013958","USW00023188","USW00014922","USW00093721"),
                       FirstDate=c("1938-06-01","1939-07-01","1938-04-09","1939-07-01"))
-kable(table_df, col.names=c("City", "Station ID", "First Available"))
+kable(table_df, cap="Data source descriptions",
+      col.names=c("City", "Station ID", "First Available"))
 ```
 
 To make computation more manageable, I truncated each data set to 1993 - 2022. Figures 2 and 3 display time series and box plots of the truncated data sets.  
@@ -402,19 +403,7 @@ Understanding why LOOCV fails to smooth temperature data can help us pick better
 
 The smoothing methods examined up to now assume that the variance of the data is constant across its range. However, temperature data doesn't meet this assumption due to both long and short-term factors. Climate change is an example of a long-term factor affecting temperature variance: as the climate gets further disrupted, we see more temperature extremes and fluctuations. 
 
-The seasons are the primary short-term factor affecting temperature variance. Take another look at some of the Austin data:
-
-```{r fig.cap="Austin daily highs"}
-low=1000
-high=2500
-gg = ggplot(data1_aus[low:high,], aes(x=DATE, y=TMAX)) + 
-  geom_line() + 
-  labs(x="Date", y="High Temp. (F)") + 
-  theme(plot.title = element_text(hjust = 0.5))
-print(gg)
-```
-
-We can see from this graph (and I know from personal experience) that temperature variance is much higher in the winter than the summer. Austin winters generally fluctuate between 40F and 80F, often within the span of a couple days, while Austin summers generally stay in the upper 90s to low 100s. 
+The seasons are the primary short-term factor affecting temperature variance. Take another look at some of the Austin data in Figure 1. We can see from this graph (and I know from personal experience) that temperature variance is much higher in the winter than the summer. Austin winters generally fluctuate between 40F and 80F, often within the span of a couple days, while Austin summers generally stay in the upper 90s to low 100s. 
 
 As a result, different bandwidths are appropriate in different seasons. Higher bandwidths seem better in winter since they'll give smooths that are less affected by the short-term fluctuations. Relatively lower bandwidths seem better in summer since they can better capture the peak heat (usually in August).
 
@@ -422,7 +411,9 @@ As a result, different bandwidths are appropriate in different seasons. Higher b
 
 Most smoothing methods work better when deviations from the broader trend in the data are uncorrelated with each other. In the case of temperature data, this would occur if fluctuations around the broader trend were independent from one day to the next. The fluctuations would tend to balance each other out, allowing a smoother to easily cut through the middle of them.
 
-Unfortunately, temperature data isn't like this. When temperatures deviate from the broader trend, they generally do so over the course of several days in a heat wave or cold spell. Abnormally hot days are likely to be followed by abnormally hot days; likewise for abnormally cold days. Consider the highlighted heat wave in Austin during February 1996: 
+Unfortunately, temperature data isn't like this. When temperatures deviate from the broader trend, they generally do so over the course of several days in a heat wave or cold spell. Abnormally hot days are likely to be followed by abnormally hot days; likewise for abnormally cold days. 
+
+Consider the February 1996 heat wave in Austin highlighted in Figure 8. Here, the positive deviations from the overall trend lasted about a week. Unless they have a very high bandwidth, smoothers won't be able to "cut through" this heat wave and stick to the broader trend. The prolonged spell of abnormally high temperatures will inevitably pull the smooth upwards, perhaps in dramatic fashion. Looking back at the smoother with $h=14$ in Section 3, this is exactly what happens.
 
 ```{r fig.cap="Austin daily highs with Feb. 1996 heat wave"}
 low=1000
@@ -437,9 +428,7 @@ gg =  ggplot(data1_aus[low:high,], aes(x=DATE, y=TMAX)) +
 print(gg)
 ```
 
-Here, the positive deviations from the overall trend lasted about a week. Unless they have a very high bandwidth, smoothers won't be able to "cut through" this heat wave and stick to the broader trend. The prolonged spell of abnormally high temperatures will inevitably pull the smooth upwards, perhaps in dramatic fashion. Looking back at the smoother with $h=14$ in Section 3, this is exactly what happens.
-
-We get more evidence of the dependent nature of temperature data from the autocorrelation (ACF) plots of the residuals from the $h=14$ smooths on each city. The ACF plots display the correlations between different lags of the residuals:  
+We get more evidence of the dependent nature of temperature data from the autocorrelation (ACF) plots of the residuals from the $h=14$ smooths on each city. The ACF plots in Figure 9 display the correlations between different lags of the residuals. For each city, the residuals are positively correlated with the lag-1 and lag-2 residuals. For Minneapolis, the residuals are even positively correlated with the lag-3 residuals.  
 
 ```{r}
 error1_aus = Y_hat1_aus - high1_aus
@@ -465,8 +454,6 @@ acf(error1_sd, lag=20, main="San Diego", cex.main=1.5, cex.lab=1)
 acf(error1_mn, lag=20, main="Minneapolis", cex.main=1.5, cex.lab=1)
 acf(error1_bt, lag=20, main="Baltimore", cex.main=1.5, cex.lab=1)
 ```
-
-For each city, the residuals are positively correlated with the lag-1 and lag-2 residuals. For Minneapolis, the residuals are even positively correlated with the lag-3 residuals. 
 
 # 6. Super-Smoother
 
@@ -874,9 +861,9 @@ kable(table_df, caption="Mean KBCV Super-Smoother Bandwidth by City",
       col.names=c("City", "Mean Bandwidth (h*=15, k=3)"))
 ```
 
-The generally higher bandwidths lead to much-improved smooths which can be seen in Figure 13. The smooths are much less wiggly than the LOOCV super-smooths in Figure 12 (Section 6.1), doing a better job of capturing broader seasonal trends instead of short-term deviations. For instance, the LOOCV smooth for Austin in Winter 1995-1996 contains 3 prominent local minima and is yanked upwards by the February 1996 heat wave. The KBCV smooth, on the other hand, contains only a single minimum in that period and is less sensitive to the heat wave.
+The generally higher bandwidths lead to much-improved smooths which can be seen in Figures 13 and 14. The smooths are much less wiggly than the LOOCV super-smooths in Figure 12 (Section 6.1), doing a better job of capturing broader seasonal trends instead of short-term deviations. For instance, the LOOCV smooth for Austin in Winter 1995-1996 contains 3 prominent local minima and is yanked upwards by the February 1996 heat wave. The KBCV smooth, on the other hand, contains only a single minimum in that period and is less sensitive to the heat wave.
 
-Figure 13 also displays the bandwidths selected by the super-smoother at each point (along with the $h^*=15$ smooth applied to them). We can see some seasonality in the bandwidth selections that match the advertised properties of the super-smoother. Higher bandwidths tend to be selected in higher-variance periods (e.g. Austin winters, Baltimore springs) and lower bandwidths tend to be selected in lower-variance periods (e.g. Austin summers).
+Figures 13 and 14 also displays the bandwidths selected by the super-smoother at each point (along with the $h^*=15$ smooth applied to them). We can see some seasonality in the bandwidth selections that match the advertised properties of the super-smoother. Higher bandwidths tend to be selected in higher-variance periods (e.g. Austin winters, Baltimore springs) and lower bandwidths tend to be selected in lower-variance periods (e.g. Austin summers).
 
 ```{r}
 plot_df_temp_as = data.frame(TMAX=c(data1_aus$TMAX, data1_sd$TMAX),
@@ -889,7 +876,7 @@ plot_df_temp_as = data.frame(TMAX=c(data1_aus$TMAX, data1_sd$TMAX),
                             rep("S.D.", n1_sd)))
 ```
 
-```{r fig.cap="Above: daily highs with KBCV super-smooth (h*=15, k=3). Below: KBCV super-smoother selected bandwidths"}
+```{r fig.cap="Above: daily highs with KBCV super-smooth (h*=15, k=3). Below: KBCV super-smoother selected bandwidths."}
 plot_df_temp_as_trunc = plot_df_temp_as[(plot_df_temp_as$DATE >= "1995-10-01") & (
   plot_df_temp_as$DATE <= "1999-09-30"),]
 
@@ -921,7 +908,7 @@ plot_df_temp_mb = data.frame(TMAX=c(data1_mn$TMAX, data1_bt$TMAX),
                             rep("Baltimore", n1_bt)))
 ```
 
-```{r fig.cap="Above: daily highs with KBCV super-smooth (h*=15, k=3). Below: KBCV super-smoother selected bandwidths"}
+```{r fig.cap="Above: daily highs with KBCV super-smooth (h*=15, k=3). Below: KBCV super-smoother selected bandwidths."}
 plot_df_temp_mb_trunc = plot_df_temp_mb[(plot_df_temp_mb$DATE >= "1995-10-01") & (
   plot_df_temp_mb$DATE <= "1999-09-30"),]
 
@@ -942,9 +929,7 @@ gg2 = ggplot(plot_df_temp_mb_trunc) +
 plot_grid(gg1, gg2, nrow=2, ncol=1)
 ```
 
-
 # 8. Discussion and Further Research
-
 
 # 9. References
 
