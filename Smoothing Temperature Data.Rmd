@@ -1,7 +1,7 @@
 ---
 title: "Smoothing Temperature Data"
 author: "Steve Bischoff"
-date: "2023-12-28"
+date: "2024-1-13"
 output:
   pdf_document: default
   html_document: default
@@ -103,13 +103,13 @@ print(gg)
 
 The graph is visually unappealing due to daily temperature fluctuations. This noise also makes it difficult to generalize and identify trends. As just one example: the winter of 1996-1997 clearly has the lowest lows of these years, but was that cold spell an aberration or did it truly have the coldest winter?
 
-This project investigates the application of automated smoothing methods to temperature data. Temperature data has several features that complicate the task. These features are detailed in Section 5, and potential solutions are discussed in subsequent sections. I find that *Super-Smoothing with K-Block Cross-Validation* does a pretty good job of smoothing the data where other methods fail. 
+This project investigates the application of automated smoothing methods to temperature data. Temperature data has several features that complicate the task. These features are detailed in Section 5, and potential solutions are discussed in subsequent sections. We find that *Super-Smoothing with K-Block Cross-Validation* does a pretty good job of smoothing the data where other methods fail. 
 
 ## 1.1 Data
 
-The data used in this project comes from the National Oceanic and Atmospheric Administration (NOAA).[1] I used the search tool to find stations that have had 100% Daily Summary coverage for many decades.  
+The data used in this project comes from the National Oceanic and Atmospheric Administration (NOAA).[1] We can use the search tool to find stations that have had 100% Daily Summary coverage for many decades.  
 
-I wanted to investigate temperature smoothing across a wide variety of climates, so I requested data from 4 different cities. Table 1 provides a summary. 
+In order to investigate temperature smoothing across a wide variety of climates, we'll use data from 4 different cities. Table 1 provides a summary. 
 
 ```{r results='asis'}
 table_df = data.frame(City=c("Austin", "San Diego", "Minneapolis", "Baltimore"),
@@ -119,7 +119,7 @@ kable(table_df, cap="Data source descriptions",
       col.names=c("City", "Station ID", "First Available"))
 ```
 
-To make computation more manageable, I truncated each data set to 1993 - 2022. Figures 2 and 3 display time series and box plots of the truncated data sets.  
+To make computation more manageable, we truncate each data set to 1993 - 2022. Figures 2 and 3 display time series and box plots of the truncated data sets.  
 
 ```{r}
 plot_df = data.frame(Daily_High_Temp=c(data1_aus$TMAX, data1_sd$TMAX,
@@ -297,7 +297,7 @@ LOOCV chooses among a set of candidate bandwidths by measuring how well smoother
 
 ^fn.^ Fortunately, a mathematical shortcut can be applied so that each smoother doesn't actually have to be trained *n* times. See ([2] p. 371).
 
-I applied LOOCV to each temperature data set, testing candidate bandwidths ranging from $h=1$ to $h=20$ in the integers (as we'll see, testing larger bandwidths is unnecessary). 
+We apply LOOCV to each temperature data set, testing candidate bandwidths ranging from $h=1$ to $h=20$ in the integers (as we'll see, testing larger bandwidths is unnecessary). 
 
 ```{r}
 squared_error = function(u) {
@@ -477,9 +477,9 @@ knitr::include_graphics("images/supersmoother_data.png")
 knitr::include_graphics("images/supersmoother_bandwidths.png")
 ```
 
-I tested the LOOCV super-smoother on each data set. After some trial-and-error, I used $H = (7, 15, 23, 31, 39, 47, 55, 63, 71, 79, 87)$ as the set of candidate bandwidths. 
+We test the LOOCV super-smoother on each data set. After some trial-and-error, we use $H = (7, 15, 23, 31, 39, 47, 55, 63, 71, 79, 87)$ as the set of candidate bandwidths. 
 
-The decision to use a set of 11 candidate bandwidths introduced a minor complication. The paper introducing the super-smoother uses a set of 3 candidate bandwidths and recommends using the second-largest of these when applying the second and third smooths to the LOOCV errors and optimal bandwidths, respectively (call the bandwidth of these smooths $h^*$). This recommendation is ambiguous for a larger set of candidates: do we use the second-largest or the median bandwidth for the later smooths? I decided to test both options ($h^*=15$ and $h^*=47$).
+The decision to use a set of 11 candidate bandwidths introduced a minor complication. The paper introducing the super-smoother uses a set of 3 candidate bandwidths and recommends using the second-largest of these when applying the second and third smooths to the LOOCV errors and optimal bandwidths, respectively (call the bandwidth of these smooths $h^*$). This recommendation is ambiguous for a larger set of candidates: do we use the second-largest or the median bandwidth for the later smooths? We'll test both options ($h^*=15$ and $h^*=47$).
 
 ```{r}
 super_smoother = function(X, Y, kernel_func, H_array, error_estimate="loocv", 
@@ -721,7 +721,7 @@ low_mean_bt = mean(smoothed_h_min1_bt)
 data1_bt$Y_hat = Y_hat1_bt
 ```
 
-Unfortunately, the super-smoother with LOOCV bandwidth selection also mostly fails to give good smooths of the data. As seen in Table 2, for each city and choice of $h^*$, the mean of the bandwidths chosen by the super-smoother across the data set is fairly close to 7, the smallest candidate bandwidth. In other words, the LOOCV super-smoother selects the smallest possible bandwidth as "optimal" at most points in the data set. (I tested sets of candidate bandwidths that contained even smaller values and got the same result.)
+Unfortunately, the super-smoother with LOOCV bandwidth selection also mostly fails to give good smooths of the data. As seen in Table 2, for each city and choice of $h^*$, the mean of the bandwidths chosen by the super-smoother across the data set is fairly close to 7, the smallest candidate bandwidth. In other words, the LOOCV super-smoother selects the smallest possible bandwidth as "optimal" at most points in the data set. (Sets of candidate bandwidths that contained even smaller values give the same result.)
 
 ```{r results='asis'}
 table_df = data.frame(City=c("Austin", "San Diego", "Minneapolis", "Baltimore"),
@@ -760,7 +760,7 @@ The super-smoother is designed to overcome difficulties posed by data with non-c
 
 *K*-block cross-validation (KBCV) is a LOOCV alternative designed to help with this problem (the original authors call the technique *h*-block cross-validation, but I use "*k*" instead to avoid confusion with bandwidth parameters).[4] As with LOOCV, KBCV uses singleton test sets. The difference is in the training sets: LOOCV uses all $n-1$ remaining points in the training set, whereas KBCV uses $n - 2k - 1$ training points for a user-specified window parameter $k$. In addition to the testing point, KBCV training sets leave out a window of $k$ points on either side.
 
-I tested KBCV with a window parameter $k=3$, which leaves out a total of 7 points (the testing point, 3 points before, and 3 points after) from each training set. I set $k=3$ because the autocorrelation plots in Section 5.2 gave evidence of positive residual correlation up to lag 3. The super-smoother bandwidth used to smooth the cross-validation errors and optimal bandwidths was set to $h^*=15$ since this gave better LOOCV results.
+We test KBCV with a window parameter $k=3$, which leaves out a total of 7 points (the testing point, 3 points before, and 3 points after) from each training set. We set $k=3$ because the autocorrelation plots in Section 5.2 gave evidence of positive residual correlation up to lag 3. The super-smoother bandwidth used to smooth the cross-validation errors and optimal bandwidths was set to $h^*=15$ since this gave better LOOCV results.
 
 ```{r}
 kb_window = 3
@@ -930,6 +930,10 @@ plot_grid(gg1, gg2, nrow=2, ncol=1)
 ```
 
 # 8. Discussion and Further Research
+
+In this project, we examined automated bandwidth selection methods for kernel smoothing on daily temperature data. We discussed some problematic properties of this data that cause standard methods to fail. To help with the problem of non-constant variance, we moved from regular linear smoothers to the super-smoother. To help with the problem of dependent data, we moved from leave-one-out cross-validation to *k*-block cross-validation. We showed that the KBCV super-smoother does a good job smoothing temperature data across a wide variety of climates.
+
+Further research: hyperparameter settings
 
 # 9. References
 
