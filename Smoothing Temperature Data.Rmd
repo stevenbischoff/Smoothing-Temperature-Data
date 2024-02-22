@@ -1,7 +1,7 @@
 ---
 title: "Smoothing Temperature Data"
 author: "Steve Bischoff"
-date: "2024-1-13"
+date: "2024-2-22"
 output:
   pdf_document: default
   html_document: default
@@ -933,7 +933,7 @@ plot_grid(gg1, gg2, nrow=2, ncol=1)
 
 In this project, we examined automated bandwidth selection methods for kernel smoothing on daily temperature data. We discussed some problematic properties of this data that cause standard methods to fail. To help with the problem of non-constant variance, we moved from regular linear smoothers to the super-smoother. To help with the problem of dependent data, we moved from leave-one-out cross-validation to *k*-block cross-validation. We showed that the KBCV super-smoother does a good job smoothing temperature data across a wide variety of climates.
 
-Further research: hyperparameter settings
+The KBCV super-smoother uses several hyperparameters: the set of candidate bandwidths, the bandwidths of the two higher-level smooths, and the window size *k* for *k*-block cross-validation. Tuning these hyperparameters was only briefly discussed in this project and is a good topic of further research.  
 
 # 9. References
 
